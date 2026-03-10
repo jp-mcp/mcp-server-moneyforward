@@ -1,0 +1,44 @@
+{
+  "name": "@jp-mcp/server-moneyforward",
+  "version": "0.1.0",
+  "description": "MCP Server for Money Forward Cloud APIs (会計/請求書/経費/給与)",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "mcp-server-moneyforward": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "ts-node src/index.ts",
+    "start": "node dist/index.js",
+    "lint": "eslint src/",
+    "test": "jest"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "moneyforward",
+    "money-forward",
+    "accounting",
+    "japan",
+    "クラウド会計",
+    "マネーフォワード"
+  ],
+  "license": "MIT",
+  "author": "jp-mcp",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jp-mcp/mcp-server-moneyforward"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "@types/node": "^22.0.0",
+    "ts-node": "^10.9.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

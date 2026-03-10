@@ -3,6 +3,13 @@
  */
 
 export const TOOLS = [
+  // === テナント (Auth) ===
+  {
+    name: 'mf_get_tenant',
+    description: '事業者（テナント）情報を取得。テナントコード・事業者名を確認できる。',
+    inputSchema: { type: 'object' as const, properties: {} },
+  },
+
   // === 会計 (Accounting) ===
   {
     name: 'mf_list_deals',

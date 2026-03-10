@@ -1,17 +1,34 @@
 /**
  * Money Forward Cloud API Client
- * OAuth2.0 + APIキー認証対応
+ * OAuth2.0 (Authorization Code) + APIキー認証対応
  * Rate limit handling + Exponential backoff
+ * 
+ * エンドポイント:
+ *   認可サーバー: https://api.biz.moneyforward.com
+ *   会計API: https://accounting.moneyforward.com/api/v3
+ *   請求書API: https://invoice.moneyforward.com/api/v3
+ * 
+ * 認証方式:
+ *   - OAuth2.0 Authorization Code (ユーザー向けアプリ)
+ *   - APIキー (サーバー間通信)
  */
 
-interface MFConfig {
-  clientId: string;
-  clientSecret: string;
+export interface MFConfig {
+  /** OAuth2.0 Client ID */
+  clientId?: string;
+  /** OAuth2.0 Client Secret */
+  clientSecret?: string;
+  /** OAuth2.0 Access Token */
   accessToken: string;
-  apiKey: string;
-  officeId: string;
+  /** OAuth2.0 Refresh Token (for auto-refresh) */
+  refreshToken?: string;
+  /** APIキー (サーバー間通信用、accessTokenの代替) */
+  apiKey?: string;
+  /** 事業所ID */
+  officeId?: string;
 }
 
+const AUTH_BASE_URL = 'https://api.biz.moneyforward.com';
 const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 1000;
 const REQUEST_INTERVAL_MS = 200; // 5 req/sec max
@@ -20,6 +37,7 @@ export class MoneyForwardClient {
   private config: MFConfig;
   private baseUrl = 'https://accounting.moneyforward.com/api/v3';
   private invoiceBaseUrl = 'https://invoice.moneyforward.com/api/v3';
+  private authBaseUrl = AUTH_BASE_URL;
   private lastRequestTime = 0;
 
   constructor(config: MFConfig) {
@@ -41,21 +59,18 @@ export class MoneyForwardClient {
     const response = await fetch(url, options);
 
     if (response.status === 429 && retries < MAX_RETRIES) {
-      // Rate limited — exponential backoff
       const retryAfter = response.headers.get('Retry-After');
       const delayMs = retryAfter
         ? parseInt(retryAfter, 10) * 1000
         : BASE_DELAY_MS * Math.pow(2, retries);
-
       console.error(`Rate limited. Retrying in ${delayMs}ms (attempt ${retries + 1}/${MAX_RETRIES})`);
       await new Promise(resolve => setTimeout(resolve, delayMs));
       return this.requestWithRetry(url, options, retries + 1);
     }
 
     if (response.status >= 500 && retries < MAX_RETRIES) {
-      // Server error — retry with backoff
       const delayMs = BASE_DELAY_MS * Math.pow(2, retries);
-      console.error(`Server error ${response.status}. Retrying in ${delayMs}ms (attempt ${retries + 1}/${MAX_RETRIES})`);
+      console.error(`Server error ${response.status}. Retrying in ${delayMs}ms`);
       await new Promise(resolve => setTimeout(resolve, delayMs));
       return this.requestWithRetry(url, options, retries + 1);
     }
@@ -63,26 +78,66 @@ export class MoneyForwardClient {
     return response;
   }
 
+  /** Auto-refresh access token using refresh token */
+  private async refreshAccessToken(): Promise<boolean> {
+    if (!this.config.refreshToken || !this.config.clientId || !this.config.clientSecret) {
+      return false;
+    }
+
+    try {
+      const auth = Buffer.from(`${this.config.clientId}:${this.config.clientSecret}`).toString('base64');
+      const response = await fetch(`${this.authBaseUrl}/token`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Authorization': `Basic ${auth}`,
+        },
+        body: new URLSearchParams({
+          grant_type: 'refresh_token',
+          refresh_token: this.config.refreshToken,
+        }).toString(),
+      });
+
+      if (!response.ok) return false;
+
+      const data = await response.json() as any;
+      this.config.accessToken = data.access_token;
+      if (data.refresh_token) {
+        this.config.refreshToken = data.refresh_token;
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   private async request(path: string, options: RequestInit = {}, base?: string): Promise<any> {
     await this.throttle();
 
     const url = `${base || this.baseUrl}${path}`;
+    const token = this.config.apiKey || this.config.accessToken;
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
+      'Authorization': `Bearer ${token}`,
     };
 
-    // APIキー認証 or OAuth2
-    if (this.config.apiKey) {
-      headers['Authorization'] = `Bearer ${this.config.apiKey}`;
-    } else if (this.config.accessToken) {
-      headers['Authorization'] = `Bearer ${this.config.accessToken}`;
-    }
-
-    const response = await this.requestWithRetry(url, {
+    let response = await this.requestWithRetry(url, {
       ...options,
       headers: { ...headers, ...(options.headers as Record<string, string>) },
     });
+
+    // Auto-refresh on 401
+    if (response.status === 401 && !this.config.apiKey) {
+      const refreshed = await this.refreshAccessToken();
+      if (refreshed) {
+        headers['Authorization'] = `Bearer ${this.config.accessToken}`;
+        response = await this.requestWithRetry(url, {
+          ...options,
+          headers: { ...headers, ...(options.headers as Record<string, string>) },
+        });
+      }
+    }
 
     if (!response.ok) {
       const errorBody = await response.text();
@@ -92,6 +147,12 @@ export class MoneyForwardClient {
     }
 
     return response.json();
+  }
+
+  // === 認可サーバー (Auth) ===
+
+  async getTenant(): Promise<any> {
+    return this.request('/v2/tenant', {}, this.authBaseUrl);
   }
 
   // === 会計 (Accounting) ===

@@ -27,6 +27,7 @@ const client = new MoneyForwardClient({
   clientId: process.env.MF_CLIENT_ID || '',
   clientSecret: process.env.MF_CLIENT_SECRET || '',
   accessToken: process.env.MF_ACCESS_TOKEN || '',
+  refreshToken: process.env.MF_REFRESH_TOKEN || '',
   apiKey: process.env.MF_API_KEY || '',
   officeId: process.env.MF_OFFICE_ID || '',
 });
@@ -54,6 +55,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   try {
     switch (name) {
+      // === テナント (Auth) ===
+      case 'mf_get_tenant': {
+        return { content: [{ type: 'text', text: JSON.stringify(await client.getTenant(), null, 2) }] };
+      }
+
       // === 会計 (Accounting) ===
       case 'mf_list_deals': {
         const params = {

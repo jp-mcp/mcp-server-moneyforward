@@ -2,4 +2,6 @@ node_modules/
 dist/
 *.js.map
 .env
-.env.*
+.env.local
+.env.production
+!.env.example

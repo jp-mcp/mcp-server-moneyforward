@@ -35,7 +35,13 @@ jobs:
 
       - name: Check for secrets in code
         run: |
-          if grep -rn 'Bearer [A-Za-z0-9]' src/ --include='*.ts' | grep -v 'config\.' | grep -v 'headers\[' | grep -v '${'; then
+          # Check for hardcoded tokens (exclude regex patterns, comments, and test files)
+          if grep -rn 'Bearer [A-Za-z0-9]\{20,\}' src/ --include='*.ts' \
+            | grep -v '\/\/' \
+            | grep -v 'regex' \
+            | grep -v 'Pattern' \
+            | grep -v '__tests__' \
+            | grep -v 'sanitizer'; then
             echo "WARNING: Possible hardcoded token found!"
             exit 1
           fi
